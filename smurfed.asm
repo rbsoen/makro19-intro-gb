@@ -7,10 +7,18 @@ GBS_INIT equ $3FE0
 GBS_PLAY equ $4000
 
 ;;; Makro ;;;
+waitframe equs "rst $00"
+
 waitvram: MACRO
     ld a, [rSTAT]
     bit 1, a
-    jr nz, @-6
+    db $20, $FA
+    ENDM
+
+checkline: MACRO
+    ld a, [rLY]
+    cp d
+    db $20, $FA
     ENDM
 
 loadgfx: MACRO
@@ -40,9 +48,17 @@ copy2x2: MACRO
 ;;; Rst vectors ;;;
 
 SECTION "rst00", ROM0 [$0]
-	reti
-SECTION "rst08", ROM0 [$8]
-	reti
+WaitFrame::
+; rst $08 can't be used
+    ld a, 1
+    ld [VBlankFlag], a
+.wait
+    ld a,[VBlankFlag]
+    and a
+    jr nz, .wait
+    reti
+;SECTION "rst08", ROM0 [$8]
+;	reti
 SECTION "rst10", ROM0 [$10]
 	reti
 SECTION "rst18", ROM0 [$18]
@@ -126,9 +142,9 @@ Start::
 	jr nz, .bootstrap
 
 ; load graphics
-    loadgfx_off ASCII, $20
+    loadgfx_off ASCII, $20 + $11E
     loadgfx_off MAKROTEXT, $7C
-    loadgfx_off MAKROLOGO, $87
+    loadgfx_off MAKROLOGO, $88
 
 ; init oam positions
     ld de, InitPositions
@@ -150,21 +166,8 @@ Start::
 
 ; load logo tile map
 LoadLogo:
-    ld hl, vBGMap0 + $A6
-    ld a, $87
-    ld [hl+], a
-    inc a
-    ld [hl+], a
-    inc a
-    ld [hl+], a
-    inc a
-    ld [hl+], a
-    inc a
-    ld [hl+], a
-    inc a
-    ld [hl+], a
-    inc a
     ld hl, vBGMap0 + $A6 + $20
+    ld a, $88
     ld [hl+], a
     inc a
     ld [hl+], a
@@ -216,7 +219,7 @@ LoadLogo:
     inc a
     ld [hl+], a
     inc a
-    ld hl, vBGMap0 + $A6 + $A0
+    ld hl, vBGMap0 + $A6 + $a0
     ld [hl+], a
     inc a
     ld [hl+], a
@@ -229,7 +232,20 @@ LoadLogo:
     inc a
     ld [hl+], a
     inc a
-    ld hl, vBGMap0 + $A6 + $C0
+    ld hl, vBGMap0 + $A6 + $c0
+    ld [hl+], a
+    inc a
+    ld [hl+], a
+    inc a
+    ld [hl+], a
+    inc a
+    ld [hl+], a
+    inc a
+    ld [hl+], a
+    inc a
+    ld [hl+], a
+    inc a
+    ld hl, vBGMap0 + $A6 + $e0
     ld [hl+], a
     inc a
     ld [hl+], a
@@ -265,10 +281,20 @@ MainLoop::
     xor a
     ld [FrameCounter], a
     ld [FrameCounter+1], a
+    ld [ScrollVar2], a
+; init text
+    ld hl, ScrollingText
+    ld a, h
+    ld [TextPointer], a
+    ld a, l
+    ld [TextPointer+1], a
 .begin
     ld bc, $01D0
     call TimedWait
 .loop
+    ld a, [ScrollVar2]
+    inc a
+    ld [ScrollVar2], a
     ld a, [FrameCounter+1]
     and %000000011
     jr nz, .animate
@@ -277,6 +303,7 @@ MainLoop::
     ;ld [rOBP0], a
 .animate
     ;call AnimateTextMoving
+    call DoScroll
 
     ld a, [FrameCounter+1]
 
@@ -286,7 +313,7 @@ MainLoop::
     rlca
     call AnimateSineIndex_x
 
-    call WaitFrame
+    waitframe
 	jr .loop
 
 AnimateTextMoving:
@@ -301,6 +328,63 @@ AnimateTextMoving:
     endr
     endr
     ret
+
+DoScroll:
+	ld a, [ScrollVar2]		; current position
+	and a
+	jr nz, .skiploadingtexttile	; if we're still scrolling
+					; skip loading text
+; load text tile
+	waitvram
+	ld a, [vBGMap0 + $1e0]		; move the first visible tile
+	ld [vBGMap0 + $1ff], a		; to the end of the row
+	ld b, 20			; tiles to move
+	ld hl, vBGMap0 + $1e1		; begin offset
+.move
+	waitvram			; wait till it's safe to tinker
+					; with VRAM
+	ld a, [hl]
+	dec hl
+	ld [hli], a			; move tile backwards
+	inc hl				; next tile
+	dec b
+	jr nz, .move
+; get character from pointer
+	ld a, [TextPointer]
+	ld h, a
+	ld a, [TextPointer + 1]
+	ld l, a
+	ld a, [hl]
+	push af
+	waitvram
+	pop af
+; add new character
+	cp "@"				; end of text?
+	jr z, .finishtext
+	ld [vBGMap0 + $1f3], a
+; update the current character pointer
+	inc hl
+	ld a, h
+	ld [TextPointer], a
+	ld a, l
+	ld [TextPointer + 1], a
+; reset counter
+	ld a, -8
+	ld [ScrollVar2], a
+.skiploadingtexttile
+; update scx
+	ld d, 120-4
+	checkline
+	ld a, [ScrollVar2]	; the actual scrolling
+	ld [rSCX], a
+	ret
+.finishtext
+	ld hl, ScrollingText		; reset scroller text address
+	ld a, h
+	ld [TextPointer], a
+	ld a, l
+	ld [TextPointer+1], a
+	jp DoScroll
 
 CopyVRAM:
 ;   (de:Source, hl:Dest, bc:Length)
@@ -325,7 +409,7 @@ AnimateSineIndex_y:
     inc d
 .cont
     ld a, [de]
-    ld [rLYC], a
+    ;ld [rLYC], a
     ld [hli], a
     inc l
     inc l
@@ -334,7 +418,7 @@ AnimateSineIndex_y:
     inc l
     inc l
     inc l
-    rept 16
+    rept 13
     inc de
     endr
     dec c
@@ -406,6 +490,7 @@ Vblank::
 ; reset palette
     ld a, %11100100
     ld [rBGP], a
+    ld [rOBP0], a
 ; run sound engine
     call GBS_PLAY
     call OAMCode
@@ -429,22 +514,16 @@ StatInt::
 ; insert scroller code here...
     ld a, %00011011
     ld [rBGP], a
+    ld [rOBP0], a
     ld a, [FrameCounter+1]
+    cpl
     ld [rSCX], a
+    ;call DoScroll
     pop af
     reti
 
-WaitFrame::
-    ld a, 1
-    ld [VBlankFlag], a
-.wait
-    ld a,[VBlankFlag]
-    and a
-    jr nz, .wait
-    reti
-
 TimedWait::
-    call WaitFrame
+    waitframe
     ld a, [FrameCounter]
     cp b
     jr nz, TimedWait
@@ -578,7 +657,18 @@ endr
 Sines_END::
 
 ScrollingText::
-    db ""
+    db "Pagi Elektro!!! Kami dari DTE 19 dengan "
+    db "bangga mempersembahkan: MAKRO 2019!!! "
+    db "Wah!! Apa tuh?? MAKRO tuh Malam Keakraban "
+    db "Elektro, kayaknya seru tuh! Serunya kayak "
+    db "gimana?? Seru deh, pokoknya! Kita bakal kumpul "
+    db "bersama, bermain games, dan lain lain! Kali ini "
+    db "MAKRO kita bertema SMURF! Kenapa SMURF?? Soalnya "
+    db "SMURF itu saling bekerja sama, bergotong-royong "
+    db "dalam melakukan pekerjaan. Harapan kita tuh biar "
+    db "DTE itu juga sama!! Yuk semarakkan rangkaian "
+    db "MAKRO 2019 !!!                               "
+    db "@"
 ScrollingText_END::
 
 SECTION "GBS_Init", ROM0[GBS_LOAD]
@@ -595,3 +685,5 @@ OAMCode::	ds CopyOAM_end - CopyOAM
 VBlankFlag:: ds 1
 FrameCounter:: ds 2
 SceneCounter:: ds 1
+TextPointer:: ds 2
+ScrollVar2:: ds 1
