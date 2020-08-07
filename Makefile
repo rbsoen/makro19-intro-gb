@@ -13,6 +13,9 @@ obj/$(ROMNAME).o: $(ROMNAME).asm inc/* art/ascii.2bpp art/intro_1.2bpp art/lette
 	[ -d obj ] || mkdir obj
 	$(RGBPATH)/rgbasm -h -o obj/$(ROMNAME).o $(ROMNAME).asm
 
+art/lettering.2bpp: art/lettering.png
+	$(RGBPATH)/rgbgfx -h -o art/lettering.2bpp art/lettering.png
+
 art/%.2bpp: art/%.png
 	$(RGBPATH)/rgbgfx -o $@ $<
 

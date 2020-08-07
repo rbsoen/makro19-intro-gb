@@ -6,6 +6,11 @@ GBS_LOAD equ $3FE0
 GBS_INIT equ $3FE0
 GBS_PLAY equ $4000
 
+;;; Custom Defines ;;;
+
+LOGO_BEGIN equ vBGMap0 + $C7
+
+
 ;;; Makro ;;;
 waitframe equs "rst $00"
 
@@ -145,6 +150,7 @@ Start::
     loadgfx_off ASCII, $20 + $11E
     loadgfx_off MAKROTEXT, $7C
     loadgfx_off MAKROLOGO, $88
+    loadgfx_off MAKROBG, $AC
 
 ; init oam positions
     ld de, InitPositions
@@ -166,7 +172,7 @@ Start::
 
 ; load logo tile map
 LoadLogo:
-    ld hl, vBGMap0 + $A6 + $20
+    ld hl, LOGO_BEGIN
     ld a, $88
     ld [hl+], a
     inc a
@@ -180,7 +186,7 @@ LoadLogo:
     inc a
     ld [hl+], a
     inc a
-    ld hl, vBGMap0 + $A6 + $40
+    ld hl, LOGO_BEGIN + $20
     ld [hl+], a
     inc a
     ld [hl+], a
@@ -193,7 +199,7 @@ LoadLogo:
     inc a
     ld [hl+], a
     inc a
-    ld hl, vBGMap0 + $A6 + $60
+    ld hl, LOGO_BEGIN + $40
     ld [hl+], a
     inc a
     ld [hl+], a
@@ -206,7 +212,7 @@ LoadLogo:
     inc a
     ld [hl+], a
     inc a
-    ld hl, vBGMap0 + $A6 + $80
+    ld hl, LOGO_BEGIN + $60
     ld [hl+], a
     inc a
     ld [hl+], a
@@ -219,7 +225,7 @@ LoadLogo:
     inc a
     ld [hl+], a
     inc a
-    ld hl, vBGMap0 + $A6 + $a0
+    ld hl, LOGO_BEGIN + $80
     ld [hl+], a
     inc a
     ld [hl+], a
@@ -232,7 +238,7 @@ LoadLogo:
     inc a
     ld [hl+], a
     inc a
-    ld hl, vBGMap0 + $A6 + $c0
+    ld hl, LOGO_BEGIN + $A0
     ld [hl+], a
     inc a
     ld [hl+], a
@@ -244,8 +250,81 @@ LoadLogo:
     ld [hl+], a
     inc a
     ld [hl+], a
+
+LoadBG:
+_Barspace equ 6
+; Press start text
+    ld hl, vBGMap0 + $1a0 + 4
+    ld de, ScrollingText
+.keepcopying
+    ld a, [de]
+    cp "@"
+    jr z, .loadback
+    ld [hl+], a
+    inc de
+    jr .keepcopying
+.loadback
+; black bg
+    ld hl, vBGMap0
+    ld a, $AC
+    rept $20
+    ld [hl+], a
+    endr
+; DTE 2019 presents
+    ; bar
+    rept _Barspace
+    ld [hl+], a
+    endr
+    ; DTE
     inc a
-    ld hl, vBGMap0 + $A6 + $e0
+    ld [hl+], a
+    inc a
+    ld [hl+], a
+    inc a
+    ld [hl+], a
+    ;
+    ld a, $AC
+    ld [hl+], a
+    ; 2019
+    ld a, $B0
+    ld [hl+], a
+    inc a
+    ld [hl+], a
+    inc a
+    ld [hl+], a
+    inc a
+    ld [hl+], a
+    inc a
+    ; bar
+    ld a, $AC
+    rept $20-8
+    ld [hl+], a
+    endr
+    ; presents
+    ld a, $B4
+    ld [hl+], a
+    inc a
+    ld [hl+], a
+    inc a
+    ld [hl+], a
+    inc a
+    ld [hl+], a
+    ld a, $B6
+    ld [hl+], a
+    ld a, $B8
+    ld [hl+], a
+    inc a
+    ld [hl+], a
+    ld a, $B7
+    ld [hl+], a
+    ; bar
+    ld a, $AC
+    rept $20-8-_Barspace+$20
+    ld [hl+], a
+    endr
+; Makro2019 top
+    rept 6
+    ld a, $BA
     ld [hl+], a
     inc a
     ld [hl+], a
@@ -255,9 +334,32 @@ LoadLogo:
     ld [hl+], a
     inc a
     ld [hl+], a
+    endr
+    ld a, $BA
+    ld [hl+], a
+    ld [hl+], a
+; Makro2019 bottom
+    ld hl, vBGMap0 + $1A0 + $40
+    rept 6
+    ld a, $BA
+    ld [hl+], a
     inc a
     ld [hl+], a
     inc a
+    ld [hl+], a
+    inc a
+    ld [hl+], a
+    inc a
+    ld [hl+], a
+    endr
+    ld a, $BA
+    ld [hl+], a
+    ld [hl+], a
+; all black
+    ld a, $AC
+    rept $80
+    ld [hl+], a
+    endr
 
 ; turn on the screen
     ld a, %10000111
@@ -271,7 +373,7 @@ LoadLogo:
     ld [rSTAT], a   ;
 
 ; enable vblank and stat interrupt
-    ld a, (1 << VBLANK) + (1 << LCD_STAT)
+    ld a, (1 << VBLANK); + (1 << LCD_STAT)
 	ld [rIE], a
 	ei
 
@@ -289,22 +391,37 @@ MainLoop::
     ld a, l
     ld [TextPointer+1], a
 .begin
+    ld a, [FrameCounter+1]
+    call AnimateSineIndex_y
+    call MoveTopBanner
+    ld a, %00000110
+    ld [rBGP], a
+    ;call DoScroll
+    call MoveBottomBanner
     ld bc, $01D0
-    call TimedWait
+    waitframe
+    ld a, [FrameCounter]
+    cp b
+    jr nz, .begin
+    ld a, [FrameCounter+1]
+    cp c
+    jr nz, .begin
 .loop
     ld a, [ScrollVar2]
     inc a
     ld [ScrollVar2], a
     ld a, [FrameCounter+1]
     and %000000011
-    jr nz, .animate
+    ;jr nz, .animate
 	;ld a, [rOBP0]
 	;cpl
     ;ld [rOBP0], a
 .animate
-    ;call AnimateTextMoving
-    call DoScroll
-
+    call MoveTopBanner
+    ld a, %00000110
+    ld [rBGP], a
+    ;call DoScroll
+    call MoveBottomBanner
     ld a, [FrameCounter+1]
 
     call AnimateSineIndex_y
@@ -316,6 +433,40 @@ MainLoop::
     waitframe
 	jr .loop
 
+MoveTopBanner:
+.check_top_1
+    ld a, [rLY]
+    cp 8*4
+    jr nz, .check_top_1
+    ld a, [BannerScroll]
+    ld [rSCX],a
+.check_top_2
+    ld a, [rLY]
+    cp 8*5
+    jr nz, .check_top_2
+    xor a
+    ld [rSCX],a
+    ret
+
+MoveBottomBanner:
+; move bottom banner
+.check_bottom_1
+    ld a, [rLY]
+    cp 8*15
+    jr nz, .check_bottom_1
+    ld a, [BannerScroll]
+    cpl
+    ld [rSCX],a
+    ld a, %11100100
+    ld [rBGP], a
+.check_bottom_2
+    ld a, [rLY]
+    cp 8*16
+    jr nz, .check_bottom_2
+    xor a
+    ld [rSCX],a
+    ret
+    
 AnimateTextMoving:
     ld hl, wOAMBuffer+1
     rept 5
@@ -336,10 +487,10 @@ DoScroll:
 					; skip loading text
 ; load text tile
 	waitvram
-	ld a, [vBGMap0 + $1e0]		; move the first visible tile
-	ld [vBGMap0 + $1ff], a		; to the end of the row
+	ld a, [vBGMap0 + $1e0 - $40]		; move the first visible tile
+	ld [vBGMap0 + $1ff - $40], a		; to the end of the row
 	ld b, 20			; tiles to move
-	ld hl, vBGMap0 + $1e1		; begin offset
+	ld hl, vBGMap0 + $1e1 - $40		; begin offset
 .move
 	waitvram			; wait till it's safe to tinker
 					; with VRAM
@@ -361,7 +512,7 @@ DoScroll:
 ; add new character
 	cp "@"				; end of text?
 	jr z, .finishtext
-	ld [vBGMap0 + $1f3], a
+	ld [vBGMap0 + $1f3 - $40], a
 ; update the current character pointer
 	inc hl
 	ld a, h
@@ -373,7 +524,7 @@ DoScroll:
 	ld [ScrollVar2], a
 .skiploadingtexttile
 ; update scx
-	ld d, 120-4
+	ld d, 8*13
 	checkline
 	ld a, [ScrollVar2]	; the actual scrolling
 	ld [rSCX], a
@@ -409,6 +560,9 @@ AnimateSineIndex_y:
     inc d
 .cont
     ld a, [de]
+    rept 18
+    inc a
+    endr
     ;ld [rLYC], a
     ld [hli], a
     inc l
@@ -418,7 +572,7 @@ AnimateSineIndex_y:
     inc l
     inc l
     inc l
-    rept 13
+    rept 16
     inc de
     endr
     dec c
@@ -490,7 +644,6 @@ Vblank::
 ; reset palette
     ld a, %11100100
     ld [rBGP], a
-    ld [rOBP0], a
 ; run sound engine
     call GBS_PLAY
     call OAMCode
@@ -502,7 +655,15 @@ Vblank::
     ld a, [FrameCounter]
     inc a
     ld [FrameCounter], a
+; add to banner counter
 .nomajor
+    ld a, [FrameCounter+1]
+    and 1
+    jr nz, .continue
+    ld a, [BannerScroll]
+    inc a
+    ld [BannerScroll], a
+.continue
     pop hl
     pop bc
     pop de
@@ -514,11 +675,8 @@ StatInt::
 ; insert scroller code here...
     ld a, %00011011
     ld [rBGP], a
-    ld [rOBP0], a
     ld a, [FrameCounter+1]
-    cpl
     ld [rSCX], a
-    ;call DoScroll
     pop af
     reti
 
@@ -622,6 +780,9 @@ MAKROTEXT_END::
 MAKROLOGO:: INCBIN "./art/logo.2bpp"
 MAKROLOGO_END::
 
+MAKROBG:: INCBIN "./art/intro_1.2bpp"
+MAKROBG_END::
+
 OAM_Objects::
 
 Letter_M::
@@ -641,11 +802,11 @@ Letter_O::
     db $86, %00100000
 
 InitPositions::
-    dw $2C30    ; M
-    dw $3C30    ; A
-    dw $4C30    ; K
-    dw $5C30    ; R
-    dw $6C30    ; O
+    dw $3010    ; M
+    dw $4010    ; A
+    dw $5010    ; K
+    dw $6010    ; R
+    dw $7010    ; O
 InitPositions_END::
 
 Sines::
@@ -657,6 +818,7 @@ endr
 Sines_END::
 
 ScrollingText::
+    db "Press START!@"
     db "Pagi Elektro!!! Kami dari DTE 19 dengan "
     db "bangga mempersembahkan: MAKRO 2019!!! "
     db "Wah!! Apa tuh?? MAKRO tuh Malam Keakraban "
@@ -687,3 +849,4 @@ FrameCounter:: ds 2
 SceneCounter:: ds 1
 TextPointer:: ds 2
 ScrollVar2:: ds 1
+BannerScroll:: ds 1
